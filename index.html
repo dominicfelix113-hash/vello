@@ -1,1 +1,108 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vello AI</title>
+<style>
+  body {font-family: Arial; background:#0a0a0a; color:#fff; margin:0; padding:20px; max-width:700px; margin:auto;}
+ .logo {text-align:center; font-size:32px; font-weight:bold; margin:20px 0;}
+  #chat {height:400px; overflow-y:auto; border:1px solid #333; border-radius:12px; padding:12px; margin-bottom:10px; background:#111;}
+ .msg {margin:8px 0; padding:10px; border-radius:8px;}
+ .user {background:#1e40af; margin-left:40px;}
+ .ai {background:#222; margin-right:40px;}
+  #inputBox {display:flex; gap:8px;}
+  input, button {padding:12px; border-radius:8px; border:1px solid #333; background:#1a1a1a; color:#fff;}
+  input {flex:1;}
+  button {cursor:pointer; background:#2563eb; border:none;}
+  #settingsBtn {position:absolute; top:20px; right:20px; background:#333; padding:8px 12px;}
+  #settingsModal {display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#000c; z-index:999;}
+  #settingsModal > div {background:#111; max-width:400px; margin:100px auto; padding:20px; border-radius:12px;}
+  label {display:block; margin-top:10px; font-size:14px; color:#aaa;}
+</style>
+</head>
+<body>
+  <button id="settingsBtn">⚙️</button>
+  <div class="logo">Vello</div>
+  
+  <div id="chat"></div>
+  <div id="inputBox">
+    <input id="msg" placeholder="Ask Vello anything..." />
+    <button id="send">Send</button>
+  </div>
+
+  <div id="settingsModal">
+    <div>
+      <h2>API Keys</h2>
+      <label>SerpAPI Key</label>
+      <input id="serpKey" type="password" placeholder="a97dcee2..." style="width:100%;">
+      <label>Groq Key</label>
+      <input id="groqKey" type="password" placeholder="gsk_..." style="width:100%;">
+      <button id="saveKeysBtn" style="margin-top:12px; width:100%;">Save & Close</button>
+      <p id="status" style="color:#4ade80; font-size:14px;"></p>
+    </div>
+  </div>
+
+<script>
+const chat = document.getElementById('chat');
+const msgInput = document.getElementById('msg');
+document.getElementById('serpKey').value = localStorage.getItem('serpapi_key') || '';
+document.getElementById('groqKey').value = localStorage.getItem('groq_key') || '';
+document.getElementById('settingsBtn').onclick = () => settingsModal.style.display = 'block';
+document.getElementById('saveKeysBtn').onclick = () => {
+  localStorage.setItem('serpapi_key', document.getElementById('serpKey').value.trim());
+  localStorage.setItem('groq_key', document.getElementById('groqKey').value.trim());
+  document.getElementById('status').innerText = 'Saved ✅';
+  setTimeout(() => settingsModal.style.display = 'none', 800);
+}
+function addMsg(text, who) {
+  chat.innerHTML += `<div class="msg ${who}">${text}</div>`;
+  chat.scrollTop = chat.scrollHeight;
+}
+async function webSearch(q) {
+  const key = localStorage.getItem('serpapi_key');
+  if(!key) return "⚠️ Add SerpAPI key in Settings ⚙️";
+  try {
+    const res = await fetch(`https://serpapi.com/search.json?q=${encodeURIComponent(q)}&api_key=${key}`);
+    const data = await res.json();
+    return data.organic_results?.slice(0,3).map(r => `**${r.title}**\n${r.snippet}\n${r.link}`).join('\n\n') || "No results";
+  } catch { return "Search error"; }
+}
+async function askGroq(userMsg, context) {
+  const key = localStorage.getItem('groq_key');
+  if(!key) return "⚠️ Add Groq key in Settings ⚙️";
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          {role: "system", content: `You are Vello, a helpful AI. Use this web data if relevant:\n${context}`},
+          {role: "user", content: userMsg}
+        ]
+      })
+    });
+    const data = await res.json();
+    return data.choices[0].message.content;
+  } catch { return "Groq error"; }
+}
+async function send() {
+  const text = msgInput.value.trim();
+  if(!text) return;
+  addMsg(text, 'user');
+  msgInput.value = '';
+  addMsg('Searching...', 'ai');
+  const results = await webSearch(text);
+  chat.lastChild.remove();
+  addMsg('Thinking...', 'ai');
+  const answer = await askGroq(text, results);
+  chat.lastChild.remove();
+  addMsg(answer, 'ai');
+}
+document.getElementById('send').onclick = send;
+msgInput.onkeypress = e => e.key === 'Enter' && send();
+</script>
+</body>
+</html>
